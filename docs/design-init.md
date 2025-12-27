@@ -254,7 +254,7 @@ Request:
 
 * same as `/search` plus:
 
-  * `llm_model` (string; e.g. your Ollama chat model)
+  * `llm_model` (string; e.g. your OpenAI-compatible chat model)
   * `system_prompt` (optional)
     Response:
 * `answer` (string)
@@ -263,6 +263,7 @@ Request:
 Synthesis rule:
 
 * The LLM MUST be instructed to cite `doc_id + time` when available.
+* By default, use the same OpenAI-compatible base URL as embeddings; allow an optional override for the LLM client.
 
 #### 5) Admin
 

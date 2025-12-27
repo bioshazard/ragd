@@ -25,6 +25,14 @@ def _get_env(name: str, default: str | None = None, required: bool = False) -> s
     return value or ""
 
 
+def _get_optional_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
 def _normalize_base_url(url: str) -> str:
     if url and not url.startswith(("http://", "https://")):
         return f"http://{url}"
@@ -53,8 +61,9 @@ def load_settings() -> Settings:
     openai_base_url = _normalize_base_url(_get_env("OPENAI_BASE_URL", required=True))
     openai_api_key = _get_env("OPENAI_API_KEY", "openai")
     embed_model_default = _get_env("EMBED_MODEL_DEFAULT", "nomic-embed-text:latest")
-    llm_base_url = _normalize_base_url(_get_env("LLM_BASE_URL", openai_base_url))
-    llm_api_key = _get_env("LLM_API_KEY", openai_api_key)
+    llm_base_override = _get_optional_env("LLM_BASE_URL")
+    llm_base_url = _normalize_base_url(llm_base_override or openai_base_url)
+    llm_api_key = _get_optional_env("LLM_API_KEY") or openai_api_key
 
     return Settings(
         database_url=database_url,
