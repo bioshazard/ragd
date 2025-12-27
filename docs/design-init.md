@@ -1,4 +1,4 @@
-Below is a **self-contained “ragd” spec** your dev can implement against **Ollama (embeddings)** + **Postgres + pgvector** with optional **Postgres full-text hybrid**. It’s intentionally small, single-tenant, free-form tags, and “collections = namespaces”.
+Below is a **self-contained “ragd” spec** your dev can implement against an **OpenAI-compatible embeddings API** + **Postgres + pgvector** with optional **Postgres full-text hybrid**. It’s intentionally small, single-tenant, free-form tags, and “collections = namespaces”.
 
 ---
 
@@ -14,10 +14,9 @@ A single service that provides:
 
 ### Dependencies
 
-* **Ollama** for embeddings via OpenAI-compatible endpoint: `POST /v1/embeddings` ([Ollama Documentation][1])
-  (Native Ollama embeddings endpoint also exists: `POST /api/embed` ([Ollama Documentation][2]))
-* **PostgreSQL** with **pgvector extension** ([Neon][3])
-* Optional hybrid search uses **Postgres Full Text Search + GIN index** ([PostgreSQL][4])
+* **OpenAI-compatible** embeddings endpoint: `POST /v1/embeddings`
+* **PostgreSQL** with **pgvector extension** ([Neon][2])
+* Optional hybrid search uses **Postgres Full Text Search + GIN index** ([PostgreSQL][3])
 
 ---
 
@@ -84,7 +83,7 @@ Fields:
 * `content` (text; the chunk)
 * `tags` (text array; default empty)
 * `metadata` (jsonb; include at least episode/time anchors if present)
-* `embedding` (vector; dims must equal `collections.embed_dims`) ([GitHub][5])
+* `embedding` (vector; dims must equal `collections.embed_dims`) ([GitHub][4])
 * Optional for hybrid: `fts` (tsvector) computed from content
 
 Uniq:
@@ -93,7 +92,7 @@ Uniq:
 
 Indexes:
 
-* Vector: **HNSW** on `embedding` using cosine ops (recommended) ([GitHub][5])
+* Vector: **HNSW** on `embedding` using cosine ops (recommended) ([GitHub][4])
 * Tags: GIN on `tags` (for `ANY`/`ALL` tag filters)
 * Hybrid: GIN on `fts` (tsvector) ([PostgreSQL][4])
 
@@ -124,12 +123,12 @@ Required metadata per chunk (strongly recommended):
 
 ---
 
-## Embeddings contract (Ollama)
+## Embeddings contract (OpenAI-compatible)
 
 ragd MUST support:
 
-* `POST {OLLAMA_BASE}/v1/embeddings` with `{ model, input }` ([Ollama Documentation][1])
-* Input may be string or array of strings. ([Ollama Documentation][1])
+* `POST {OPENAI_BASE}/v1/embeddings` with `{ model, input }`
+* Input may be string or array of strings.
 
 Collection creation MUST:
 
@@ -151,12 +150,12 @@ Use:
 
 * Vector search (pgvector)
 * Lexical search (Postgres FTS)
-* Fuse rankings with **Reciprocal Rank Fusion (RRF)** (simple, stable) ([Jonathan Katz][6])
+* Fuse rankings with **Reciprocal Rank Fusion (RRF)** (simple, stable) ([Jonathan Katz][5])
 
 Notes:
 
-* Postgres docs show standard FTS query + index usage patterns. ([PostgreSQL][4])
-* RRF explanation/reference for hybrid fusion. ([Jonathan Katz][6])
+* Postgres docs show standard FTS query + index usage patterns. ([PostgreSQL][3])
+* RRF explanation/reference for hybrid fusion. ([Jonathan Katz][5])
 
 Defaults:
 
@@ -283,8 +282,8 @@ Response: `{ secret_once }` (only returned on create)
 * **Safety**: enforce `embed_dims` match on write (reject if mismatch).
 * **Performance**:
 
-  * batch embedding calls (send `input: [..]`) when possible ([Ollama Documentation][1])
-  * create vector index after bulk ingest if initial load is large (pgvector notes typical index build tradeoffs) ([GitHub][5])
+  * batch embedding calls (send `input: [..]`) when possible
+  * create vector index after bulk ingest if initial load is large (pgvector notes typical index build tradeoffs) ([GitHub][4])
 * **Backups**: Postgres backups cover everything.
 
 ---
@@ -301,11 +300,10 @@ Response: `{ secret_once }` (only returned on create)
 
 If you want, I can also provide an **OpenAPI 3.1 YAML** for this contract (still “no-code” but copy/paste into tooling).
 
-[1]: https://docs.ollama.com/api/openai-compatibility "OpenAI compatibility - Ollama"
-[2]: https://docs.ollama.com/api/embed?utm_source=chatgpt.com "Generate embeddings"
-[3]: https://neon.com/docs/extensions/pgvector?utm_source=chatgpt.com "The pgvector extension - Neon Docs"
-[4]: https://www.postgresql.org/docs/current/textsearch-tables.html "PostgreSQL: Documentation: 18: 12.2. Tables and Indexes"
-[5]: https://github.com/pgvector/pgvector "GitHub - pgvector/pgvector: Open-source vector similarity search for Postgres"
-[6]: https://jkatz.github.io/post/postgres/hybrid-search-postgres-pgvector/ "Hybrid search with PostgreSQL and pgvector |
+[1]: https://platform.openai.com/docs/api-reference/embeddings "OpenAI embeddings API"
+[2]: https://neon.com/docs/extensions/pgvector?utm_source=chatgpt.com "The pgvector extension - Neon Docs"
+[3]: https://www.postgresql.org/docs/current/textsearch-tables.html "PostgreSQL: Documentation: 18: 12.2. Tables and Indexes"
+[4]: https://github.com/pgvector/pgvector "GitHub - pgvector/pgvector: Open-source vector similarity search for Postgres"
+[5]: https://jkatz.github.io/post/postgres/hybrid-search-postgres-pgvector/ "Hybrid search with PostgreSQL and pgvector |
 Jonathan Katz
 "

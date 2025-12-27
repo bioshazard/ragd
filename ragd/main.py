@@ -365,7 +365,7 @@ def startup() -> None:
     settings = load_settings()
     init_pool(settings.database_url)
     app.state.settings = settings
-    app.state.embed_client = build_client(settings.ollama_base_url, settings.ollama_api_key)
+    app.state.embed_client = build_client(settings.openai_base_url, settings.openai_api_key)
     app.state.llm_client = build_client(settings.llm_base_url, settings.llm_api_key)
 
     if settings.auto_migrate:

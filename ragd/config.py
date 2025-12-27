@@ -5,8 +5,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     database_url: str
-    ollama_base_url: str
-    ollama_api_key: str
+    openai_base_url: str
+    openai_api_key: str
     embed_model_default: str
     llm_base_url: str
     llm_api_key: str
@@ -50,18 +50,16 @@ def _get_bool(name: str, default: bool = False) -> bool:
 
 def load_settings() -> Settings:
     database_url = _get_env("DATABASE_URL", required=True)
-    ollama_base_url = _normalize_base_url(
-        _get_env("OLLAMA_BASE_URL", "http://ollama.lab1.bios.dev/v1")
-    )
-    ollama_api_key = _get_env("OLLAMA_API_KEY", "ollama")
+    openai_base_url = _normalize_base_url(_get_env("OPENAI_BASE_URL", required=True))
+    openai_api_key = _get_env("OPENAI_API_KEY", "openai")
     embed_model_default = _get_env("EMBED_MODEL_DEFAULT", "nomic-embed-text:latest")
-    llm_base_url = _normalize_base_url(_get_env("LLM_BASE_URL", ollama_base_url))
-    llm_api_key = _get_env("LLM_API_KEY", ollama_api_key)
+    llm_base_url = _normalize_base_url(_get_env("LLM_BASE_URL", openai_base_url))
+    llm_api_key = _get_env("LLM_API_KEY", openai_api_key)
 
     return Settings(
         database_url=database_url,
-        ollama_base_url=ollama_base_url,
-        ollama_api_key=ollama_api_key,
+        openai_base_url=openai_base_url,
+        openai_api_key=openai_api_key,
         embed_model_default=embed_model_default,
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
