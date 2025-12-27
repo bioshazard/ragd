@@ -1,0 +1,16 @@
+[project]
+name = "ragd"
+version = "0.1.0"
+description = "Minimal RAG service backed by Postgres + pgvector and OpenAI-compatible embeddings"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.27.0",
+  "openai>=1.30.0",
+  "psycopg[binary,pool]>=3.1.18",
+  "pydantic>=2.6.0",
+]
+
+[project.scripts]
+ragd = "ragd.main:run"
