@@ -109,8 +109,9 @@ def _ask(args: argparse.Namespace) -> int:
         "query": args.query,
         "k": args.k,
         "mode": args.mode,
-        "llm_model": args.llm_model,
     }
+    if args.llm_model:
+        payload["llm_model"] = args.llm_model
     if args.tags_any:
         payload["tags_any"] = _parse_tags(args.tags_any)
     if args.tags_all:
@@ -165,7 +166,7 @@ def main() -> int:
     ask.add_argument("--query", required=True)
     ask.add_argument("--k", type=int, default=6)
     ask.add_argument("--mode", default="vector", choices=["vector", "hybrid"])
-    ask.add_argument("--llm-model", required=True)
+    ask.add_argument("--llm-model", default=None)
     ask.add_argument("--tags-any", default=None, help="comma-separated tags")
     ask.add_argument("--tags-all", default=None, help="comma-separated tags")
     ask.set_defaults(func=_ask)

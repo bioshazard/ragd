@@ -581,9 +581,14 @@ def ask(collection: str, request: AskRequest) -> AskResponse:
         ]
     )
 
+    settings: Settings = app.state.settings
+    llm_model = request.llm_model or settings.llm_model_default
+    if not llm_model:
+        raise HTTPException(status_code=400, detail="Missing llm_model")
+
     client: OpenAI = app.state.llm_client
     response = client.chat.completions.create(
-        model=request.llm_model,
+        model=llm_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

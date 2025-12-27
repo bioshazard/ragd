@@ -95,3 +95,5 @@ python scripts/ragd_client.py ask \
   --mode vector \
   --llm-model gpt-4o-mini
 ```
+
+If `--llm-model` is omitted, the server uses `LLM_MODEL_DEFAULT`.

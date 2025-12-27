@@ -254,7 +254,7 @@ Request:
 
 * same as `/search` plus:
 
-  * `llm_model` (string; e.g. your OpenAI-compatible chat model)
+  * `llm_model` (string; optional, defaults to server `LLM_MODEL_DEFAULT`)
   * `system_prompt` (optional)
     Response:
 * `answer` (string)

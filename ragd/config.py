@@ -8,6 +8,7 @@ class Settings:
     openai_base_url: str
     openai_api_key: str
     embed_model_default: str
+    llm_model_default: str
     llm_base_url: str
     llm_api_key: str
     chunk_target_tokens: int
@@ -61,6 +62,7 @@ def load_settings() -> Settings:
     openai_base_url = _normalize_base_url(_get_env("OPENAI_BASE_URL", required=True))
     openai_api_key = _get_env("OPENAI_API_KEY", "openai")
     embed_model_default = _get_env("EMBED_MODEL_DEFAULT", "nomic-embed-text:latest")
+    llm_model_default = _get_env("LLM_MODEL_DEFAULT", "gpt-4o-mini")
     llm_base_override = _get_optional_env("LLM_BASE_URL")
     llm_base_url = _normalize_base_url(llm_base_override or openai_base_url)
     llm_api_key = _get_optional_env("LLM_API_KEY") or openai_api_key
@@ -70,6 +72,7 @@ def load_settings() -> Settings:
         openai_base_url=openai_base_url,
         openai_api_key=openai_api_key,
         embed_model_default=embed_model_default,
+        llm_model_default=llm_model_default,
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
         chunk_target_tokens=_get_int("CHUNK_TARGET_TOKENS", 700),

@@ -60,7 +60,7 @@ class SearchResponse(BaseModel):
 
 
 class AskRequest(SearchRequest):
-    llm_model: str
+    llm_model: str | None = None
     system_prompt: str | None = None
 
 
