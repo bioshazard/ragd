@@ -1,0 +1,21 @@
+services:
+  ragd:
+    image: ghcr.io/bioshazard/ragd:main
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgres://ragdtest:%26Yk%24uQdrL%23M%7Bs-gfuw0iwFyzJXj%3Cb%3EFI@localhost:5432/ragdtest"
+      OPENAI_BASE_URL: "https://ollama.lab1.bios.dev/v1"
+      OPENAI_API_KEY: "openai"
+      EMBED_MODEL_DEFAULT: "nomic-embed-text:latest"
+      LLM_MODEL_DEFAULT: "hf.co/unsloth/Qwen3-14B-GGUF:Q5_K_M"
+      RAGD_AUTO_MIGRATE: "true"
+      CHUNK_TARGET_TOKENS: "700"
+      CHUNK_OVERLAP_TOKENS: "120"
+      EMBED_BATCH_SIZE: "64"
+      SEARCH_CANDIDATE_POOL: "50"
+      SEARCH_RRF_K: "60"
+      # Optional overrides:
+      # LLM_BASE_URL: ""
+      # LLM_API_KEY: ""
+    restart: unless-stopped
