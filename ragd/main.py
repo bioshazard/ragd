@@ -378,7 +378,7 @@ def startup() -> None:
             conn.commit()
 
 
-@app.get("/v1/health")
+@app.get("/v1/health", operation_id="health")
 def health() -> dict[str, str]:
     settings: Settings = app.state.settings
     pool = get_pool()
@@ -400,6 +400,7 @@ def health() -> dict[str, str]:
     "/v1/collections",
     response_model=CollectionResponse,
     dependencies=[Depends(auth.require_api_key)],
+    operation_id="collections-create",
 )
 def create_collection(request: CollectionCreateRequest) -> CollectionResponse:
     settings: Settings = app.state.settings
@@ -436,6 +437,7 @@ def create_collection(request: CollectionCreateRequest) -> CollectionResponse:
     "/v1/collections",
     response_model=list[CollectionResponse],
     dependencies=[Depends(auth.require_api_key)],
+    operation_id="collections-list",
 )
 def list_collections() -> list[CollectionResponse]:
     pool = get_pool()
@@ -461,6 +463,7 @@ def list_collections() -> list[CollectionResponse]:
     "/v1/collections/{collection}/documents/{doc_id}",
     response_model=DocumentIngestResponse,
     dependencies=[Depends(auth.require_api_key)],
+    operation_id="documents-ingest",
 )
 def ingest_document(
     collection: str, doc_id: str, request: DocumentIngestRequest
@@ -498,6 +501,7 @@ def ingest_document(
     "/v1/collections/{collection}/search",
     response_model=SearchResponse,
     dependencies=[Depends(auth.require_api_key)],
+    operation_id="collections-search",
 )
 def search(collection: str, request: SearchRequest) -> SearchResponse:
     collection_row = _get_collection(collection)
@@ -534,6 +538,7 @@ def search(collection: str, request: SearchRequest) -> SearchResponse:
     "/v1/collections/{collection}/ask",
     response_model=AskResponse,
     dependencies=[Depends(auth.require_api_key)],
+    operation_id="collections-ask",
 )
 def ask(collection: str, request: AskRequest) -> AskResponse:
     search_request = SearchRequest(
@@ -599,7 +604,7 @@ def ask(collection: str, request: AskRequest) -> AskResponse:
     return AskResponse(answer=answer, sources=sources)
 
 
-@app.post("/v1/api-keys", response_model=ApiKeyCreateResponse)
+@app.post("/v1/api-keys", response_model=ApiKeyCreateResponse, operation_id="api-keys-create")
 def create_api_key(request: ApiKeyCreateRequest, authorized: bool = Depends(auth.optional_api_key)) -> ApiKeyCreateResponse:
     pool = get_pool()
     with pool.connection() as conn:
