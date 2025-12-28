@@ -1,0 +1,10 @@
+services:
+  ragd:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      RAGD_AUTO_MIGRATE: "true"
+    restart: unless-stopped
