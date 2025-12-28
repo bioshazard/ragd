@@ -296,15 +296,3 @@ Response: `{ secret_once }` (only returned on create)
 * Pagination for `/search`
 * Hybrid weight knobs
 * Multi-tenant via separate DB (your stated plan)
-
----
-
-If you want, I can also provide an **OpenAPI 3.1 YAML** for this contract (still “no-code” but copy/paste into tooling).
-
-[1]: https://platform.openai.com/docs/api-reference/embeddings "OpenAI embeddings API"
-[2]: https://neon.com/docs/extensions/pgvector?utm_source=chatgpt.com "The pgvector extension - Neon Docs"
-[3]: https://www.postgresql.org/docs/current/textsearch-tables.html "PostgreSQL: Documentation: 18: 12.2. Tables and Indexes"
-[4]: https://github.com/pgvector/pgvector "GitHub - pgvector/pgvector: Open-source vector similarity search for Postgres"
-[5]: https://jkatz.github.io/post/postgres/hybrid-search-postgres-pgvector/ "Hybrid search with PostgreSQL and pgvector |
-Jonathan Katz
-"
