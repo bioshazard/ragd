@@ -31,6 +31,7 @@ uvicorn ragd.main:app --reload
 - API auth uses `Authorization: Bearer <secret>`.
 - Create an API key via `POST /v1/api-keys`.
 - The service uses the OpenAI Python client against your OpenAI-compatible endpoint.
+- HNSW vector indexing requires a fixed vector dimension; see `scripts/init_db.sql` for a manual index example.
 
 ## Usage guide
 

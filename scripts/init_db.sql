@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS chunks (
   UNIQUE (collection_id, doc_id, chunk_index)
 );
 
-CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops);
+-- Note: HNSW indexes require a fixed vector dimension. Create this manually after
+-- you decide on a single embedding dimension and, if desired, alter the column to vector(n).
+-- Example:
+-- ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(768);
+-- CREATE INDEX chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS chunks_tags_gin ON chunks USING GIN (tags);
 CREATE INDEX IF NOT EXISTS chunks_fts_gin ON chunks USING GIN (fts);
 CREATE INDEX IF NOT EXISTS documents_collection_doc_id ON documents (collection_id, doc_id);

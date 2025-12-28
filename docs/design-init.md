@@ -94,9 +94,9 @@ Indexes:
 
 * Vector: **HNSW** on `embedding` using cosine ops (recommended) ([GitHub][4])
 * Tags: GIN on `tags` (for `ANY`/`ALL` tag filters)
-* Hybrid: GIN on `fts` (tsvector) ([PostgreSQL][4])
+* Hybrid: GIN on `fts` (tsvector) ([PostgreSQL][3])
 
-> Note: pgvector recommends creating an index per distance operator class, and shows HNSW + `vector_cosine_ops`. ([GitHub][5])
+> Note: pgvector recommends creating an index per distance operator class, and shows HNSW + `vector_cosine_ops`. HNSW requires a fixed vector dimension on the column. ([GitHub][4])
 
 ---
 
