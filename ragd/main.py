@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from openai import OpenAI
 from psycopg.types.json import Json
+from pydantic import ValidationError
 
 from ragd import auth
 from ragd.chunking import build_units, chunk_units
@@ -28,6 +31,9 @@ from ragd.schemas import (
 )
 
 app = FastAPI(title="ragd")
+
+MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_TOOL_NAME = "collections-search"
 
 
 def _vector_literal(vector: list[float]) -> str:
@@ -623,3 +629,172 @@ def run() -> None:
     import uvicorn
 
     uvicorn.run("ragd.main:app", host="0.0.0.0", port=8000, reload=False)
+
+
+def _mcp_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
+    return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+
+def _mcp_error(request_id: Any, code: int, message: str, data: Any | None = None) -> JSONResponse:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": error})
+
+
+def _mcp_tool_schema() -> dict[str, Any]:
+    return {
+        "name": MCP_TOOL_NAME,
+        "title": "Collection Search",
+        "description": "Run a vector or hybrid search against a collection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": "Collection name to search.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query text.",
+                },
+                "k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 12,
+                    "description": "Number of results to return.",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["vector", "hybrid"],
+                    "default": "vector",
+                    "description": "Search mode to use.",
+                },
+                "tags_any": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Match any of these tags.",
+                },
+                "tags_all": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Require all of these tags.",
+                },
+            },
+            "required": ["collection", "query"],
+        },
+    }
+
+
+def _mcp_tools_list(request_id: Any) -> JSONResponse:
+    result = {
+        "tools": [_mcp_tool_schema()],
+        "nextCursor": None,
+    }
+    return _mcp_result(request_id, result)
+
+
+def _mcp_tools_call(request_id: Any, params: Any) -> JSONResponse:
+    if not isinstance(params, dict):
+        return _mcp_error(request_id, -32602, "Invalid params")
+
+    tool_name = params.get("name")
+    if tool_name != MCP_TOOL_NAME:
+        return _mcp_error(request_id, -32601, "Tool not found")
+
+    arguments = params.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        return _mcp_error(request_id, -32602, "Invalid params")
+
+    collection = arguments.get("collection")
+    query = arguments.get("query")
+    if not collection or not query:
+        return _mcp_error(request_id, -32602, "Missing required arguments")
+
+    try:
+        search_request = SearchRequest(
+            query=query,
+            k=arguments.get("k", 12),
+            mode=arguments.get("mode", "vector"),
+            tags_any=arguments.get("tags_any"),
+            tags_all=arguments.get("tags_all"),
+        )
+    except ValidationError as exc:
+        return _mcp_error(request_id, -32602, "Invalid params", exc.errors())
+
+    try:
+        search_response = search(collection, search_request)
+    except HTTPException as exc:
+        return _mcp_error(request_id, -32000, str(exc.detail))
+    except Exception as exc:  # pragma: no cover - defensive
+        return _mcp_error(request_id, -32603, "Internal error", str(exc))
+
+    payload = json.dumps(search_response.model_dump(), ensure_ascii=True)
+    return _mcp_result(
+        request_id,
+        {
+            "content": [{"type": "text", "text": payload}],
+            "isError": False,
+        },
+    )
+
+
+@app.get(
+    "/mcp",
+    dependencies=[Depends(auth.require_api_key)],
+    include_in_schema=False,
+)
+def mcp_get() -> Response:
+    return Response(status_code=200, media_type="text/event-stream")
+
+
+@app.post(
+    "/mcp",
+    dependencies=[Depends(auth.require_api_key)],
+    operation_id="mcp",
+)
+async def mcp_post(request: Request) -> Response:
+    try:
+        payload = await request.json()
+    except Exception:
+        return _mcp_error(None, -32700, "Parse error")
+
+    if isinstance(payload, list):
+        return _mcp_error(None, -32600, "Batch requests not supported")
+    if not isinstance(payload, dict):
+        return _mcp_error(None, -32600, "Invalid request")
+
+    request_id = payload.get("id")
+    if payload.get("jsonrpc") != "2.0":
+        return _mcp_error(request_id, -32600, "Invalid JSON-RPC version")
+
+    method = payload.get("method")
+    if method == "initialize":
+        result = {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "ragd", "version": "0.1.0"},
+        }
+        if request_id is None:
+            return Response(status_code=204)
+        return _mcp_result(request_id, result)
+
+    if method == "notifications/initialized":
+        return Response(status_code=204)
+
+    if method == "ping":
+        if request_id is None:
+            return Response(status_code=204)
+        return _mcp_result(request_id, {})
+
+    if method == "tools/list":
+        if request_id is None:
+            return Response(status_code=204)
+        return _mcp_tools_list(request_id)
+
+    if method == "tools/call":
+        if request_id is None:
+            return Response(status_code=204)
+        return _mcp_tools_call(request_id, payload.get("params"))
+
+    return _mcp_error(request_id, -32601, "Method not found")
