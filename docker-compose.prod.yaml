@@ -10,7 +10,7 @@ services:
       EMBED_MODEL_DEFAULT: "nomic-embed-text:latest"
       LLM_MODEL_DEFAULT: "hf.co/unsloth/Qwen3-14B-GGUF:Q5_K_M"
       RAGD_AUTO_MIGRATE: "true"
-      CHUNK_TARGET_TOKENS: "700"
+      CHUNK_TARGET_TOKENS: "600"
       CHUNK_OVERLAP_TOKENS: "120"
       EMBED_BATCH_SIZE: "64"
       SEARCH_CANDIDATE_POOL: "50"
@@ -18,4 +18,6 @@ services:
       # Optional overrides:
       # LLM_BASE_URL: ""
       # LLM_API_KEY: ""
+      # CHUNK_OVERLAP_PERCENT: "15"
+      # CHUNK_OVERLAP_RATIO: "0.15"
     restart: unless-stopped

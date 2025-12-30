@@ -50,6 +50,26 @@ def _get_int(name: str, default: int) -> int:
         raise RuntimeError(f"Invalid int for {name}: {value}") from exc
 
 
+def _get_optional_int(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid int for {name}: {value}") from exc
+
+
+def _get_optional_float(name: str) -> float | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid float for {name}: {value}") from exc
+
+
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -66,6 +86,21 @@ def load_settings() -> Settings:
     llm_base_override = _get_optional_env("LLM_BASE_URL")
     llm_base_url = _normalize_base_url(llm_base_override or openai_base_url)
     llm_api_key = _get_optional_env("LLM_API_KEY") or openai_api_key
+    chunk_target_tokens = _get_int("CHUNK_TARGET_TOKENS", 600)
+    chunk_overlap_tokens = _get_optional_int("CHUNK_OVERLAP_TOKENS")
+    overlap_percent = _get_optional_float("CHUNK_OVERLAP_PERCENT")
+    overlap_ratio = _get_optional_float("CHUNK_OVERLAP_RATIO")
+    if chunk_overlap_tokens is None:
+        if overlap_percent is not None:
+            if not 0 <= overlap_percent <= 100:
+                raise RuntimeError("CHUNK_OVERLAP_PERCENT must be between 0 and 100")
+            chunk_overlap_tokens = int(round(chunk_target_tokens * (overlap_percent / 100)))
+        elif overlap_ratio is not None:
+            if not 0 <= overlap_ratio <= 1:
+                raise RuntimeError("CHUNK_OVERLAP_RATIO must be between 0 and 1")
+            chunk_overlap_tokens = int(round(chunk_target_tokens * overlap_ratio))
+        else:
+            chunk_overlap_tokens = 120
 
     return Settings(
         database_url=database_url,
@@ -75,8 +110,8 @@ def load_settings() -> Settings:
         llm_model_default=llm_model_default,
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,
-        chunk_target_tokens=_get_int("CHUNK_TARGET_TOKENS", 700),
-        chunk_overlap_tokens=_get_int("CHUNK_OVERLAP_TOKENS", 120),
+        chunk_target_tokens=chunk_target_tokens,
+        chunk_overlap_tokens=chunk_overlap_tokens,
         embed_batch_size=_get_int("EMBED_BATCH_SIZE", 64),
         search_candidate_pool=_get_int("SEARCH_CANDIDATE_POOL", 50),
         search_rrf_k=_get_int("SEARCH_RRF_K", 60),

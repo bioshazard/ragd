@@ -10,6 +10,7 @@ class Unit:
     segment_index: int | None = None
     t_start: float | None = None
     t_end: float | None = None
+    speaker: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ def build_units(content: str | list[dict]) -> list[Unit]:
                 segment_index=idx,
                 t_start=segment.get("t_start"),
                 t_end=segment.get("t_end"),
+                speaker=segment.get("speaker"),
             )
         )
     return units
@@ -115,5 +117,13 @@ def _build_chunk(text: str, units: list[Unit]) -> Chunk:
             metadata["t_start"] = min(t_starts)
         if t_ends:
             metadata["t_end"] = max(t_ends)
+        speakers = []
+        seen = set()
+        for unit in meta_units:
+            if unit.speaker and unit.speaker not in seen:
+                speakers.append(unit.speaker)
+                seen.add(unit.speaker)
+        if speakers:
+            metadata["speakers"] = speakers
 
     return Chunk(text=text, metadata=metadata)

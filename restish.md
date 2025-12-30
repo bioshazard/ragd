@@ -45,8 +45,8 @@ restish local collections-create \
 
 Chunking notes:
 
-- ragd splits text into word-based chunks with overlap (defaults: `CHUNK_TARGET_TOKENS=700`, `CHUNK_OVERLAP_TOKENS=120`).
-- If you have timestamps, send segment arrays (`{text,t_start,t_end}`) so chunks carry time metadata for citations.
+- ragd splits text into word-based chunks with overlap (defaults: `CHUNK_TARGET_TOKENS=600`, `CHUNK_OVERLAP_TOKENS=120` or `CHUNK_OVERLAP_PERCENT=15`).
+- If you have timestamps or speakers, send segment arrays (`{text,t_start,t_end,speaker}`) so chunks carry time metadata for citations.
 
 This loop builds a full JSON payload and pipes it to `restish` (avoids shell parsing issues):
 

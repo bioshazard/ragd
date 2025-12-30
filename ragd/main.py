@@ -180,6 +180,8 @@ def _build_chunk_payloads(
     tokens_estimated = 0
     for idx, chunk in enumerate(raw_chunks):
         metadata = dict(request.metadata)
+        if request.title and "episode_title" not in metadata:
+            metadata["episode_title"] = request.title
         metadata.update(chunk.metadata)
         metadata["episode_id"] = doc_id
         metadata["chunk_index"] = idx
