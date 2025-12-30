@@ -379,26 +379,20 @@ def _default_system_prompt() -> str:
 def _ensure_embedding_index(cur, embed_dims: int) -> None:
     cur.execute(
         """
-        DO $$
-        DECLARE
-          target_dim int := %s;
-          current_dim int;
-        BEGIN
-          SELECT CASE WHEN a.atttypmod > 0 THEN a.atttypmod - 4 ELSE NULL END
-          INTO current_dim
-          FROM pg_attribute a
-          WHERE a.attrelid = 'chunks'::regclass
-            AND a.attname = 'embedding'
-            AND a.attnum > 0
-            AND NOT a.attisdropped;
-
-          IF current_dim IS NULL OR current_dim != target_dim THEN
-            EXECUTE format('ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(%s);', target_dim);
-          END IF;
-        END $$;
-        """,
-        (embed_dims,),
+        SELECT CASE WHEN a.atttypmod > 0 THEN a.atttypmod - 4 ELSE NULL END
+        FROM pg_attribute a
+        WHERE a.attrelid = 'chunks'::regclass
+          AND a.attname = 'embedding'
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        """
     )
+    row = cur.fetchone()
+    current_dim = row[0] if row else None
+    if current_dim is None or current_dim != embed_dims:
+        cur.execute(
+            f"ALTER TABLE chunks ALTER COLUMN embedding TYPE vector({embed_dims});"
+        )
     cur.execute(
         "CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
     )
