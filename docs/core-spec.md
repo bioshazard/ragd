@@ -1,9 +1,9 @@
-# ragd canonical RAG spec (draft v0.1)
+# ragd core RAG spec (draft v0.1)
 
-This document defines a minimal, canonical decomposition of retrieval-augmented generation (RAG) that is:
+This document defines a minimal, core decomposition of retrieval-augmented generation (RAG) that is:
 
 - minimal: few dependencies, explicit SQL
-- canonical: well-defined behavior and determinism
+- deterministic: well-defined behavior and tie-breaking
 - composable: stable interfaces between blocks
 - operational: library-first with REST/MCP adapters
 - reproducible: deterministic ingest + conformance tests
@@ -19,7 +19,7 @@ and compression are included as pure retrieval components.
 
 - Chunking, embedding, storage, retrieval, and fusion
 - Deterministic ingest and retrieval semantics
-- Reference Postgres schema and query patterns
+- Core Postgres schema and query patterns
 - Conformance tests and golden vectors
 - Minimal Python API with stable signatures
 
@@ -31,7 +31,7 @@ and compression are included as pure retrieval components.
 
 ---
 
-## 1. Canonical decomposition
+## 1. Core decomposition
 
 The system decomposes into the following blocks. Each block has explicit inputs,
 outputs, and determinism rules.
@@ -57,6 +57,11 @@ outputs, and determinism rules.
 - Input: chunks + embeddings + metadata
 - Output: persisted chunks, idempotent upserts
 - Rules: uniqueness on (collection_id, doc_id, chunk_index)
+
+#### Chunk identity and stability
+
+- Chunk IDs are derived from (collection_id, doc_id, chunk_index).
+- chunk_index is deterministic given input + policy.
 
 ### 1.2 Retrieval blocks
 
@@ -131,9 +136,9 @@ def compress(query, candidates, policy=None) -> list[dict]:
 
 ---
 
-## 3. Reference Postgres schema
+## 3. Core Postgres schema
 
-The schema encodes the canonical contract:
+The schema encodes the core contract:
 
 - collections: fixed embed_model + embed_dims
 - documents: logical doc metadata
@@ -147,7 +152,7 @@ Schema details remain aligned with docs/design-init.md.
 
 ---
 
-## 4. Retrieval semantics (canonical)
+## 4. Retrieval semantics (core)
 
 ### 4.1 Vector search
 
@@ -172,6 +177,17 @@ Schema details remain aligned with docs/design-init.md.
 - tags_any: tags && provided
 - tags_all: tags @> provided
 - metadata: equality on top-level keys
+
+### 4.5 Tie-breaking and score reporting
+
+- Vector search returns distance scores (lower is better).
+- Fusion returns RRF scores (higher is better).
+- If scores tie, results are ordered by (doc_id, chunk_index).
+
+### 4.6 Filter application rules
+
+- Filters are applied to each candidate generator (vector + lexical) before ranking.
+- Fusion only combines filtered candidate lists.
 
 ---
 
@@ -206,13 +222,14 @@ Schema details remain aligned with docs/design-init.md.
 
 - REST/MCP endpoints are thin wrappers over the library
 - No behavioral drift between service and library
-- Canonical behavior is defined by the library + spec
+- Core behavior is defined by the library + spec
 
 ---
 
 ## 7. Implementation notes (non-normative)
 
 - Keep dependencies minimal (FastAPI, psycopg, openai client)
+- Core library lives in `ragd/core`; REST/MCP adapter lives in `ragd/server/app.py`
 - Prefer explicit SQL over ORMs
 - Batch embedding calls
 - Optional auto-apply schema in dev only

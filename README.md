@@ -35,21 +35,22 @@ uvicorn ragd.main:app --reload
 - Chunking defaults are env-driven (`CHUNK_TARGET_TOKENS`, `CHUNK_OVERLAP_TOKENS`, `CHUNK_MAX_CHARS`).
 - Reset all data (keep schema): `scripts/reset_db.sh` (or `psql "$DATABASE_URL" -f scripts/reset_db.sql`)
 
-## Canonical library
+## Core library
 
-The retrieval blocks live in `ragd.canon` and are the source of truth for REST/MCP.
+The retrieval blocks live in `ragd.core` and are the source of truth for REST/MCP.
 
-- Spec: `docs/canon-spec.md`
+- Spec: `docs/core-spec.md`
 - Conformance: `python3 scripts/conformance.py`
+- Server adapter: `ragd/server/app.py` (FastAPI + MCP)
 
 Library usage (Postgres-backed example):
 
 ```python
-from ragd import canon
+import ragd.core as core
 from ragd.config import load_settings
 from ragd.db import init_pool, get_pool
 from ragd.embeddings import build_client, embed_texts_batched
-from ragd.store import PostgresStore
+from ragd.core.store import PostgresStore
 
 settings = load_settings()
 init_pool(settings.database_url)
@@ -69,14 +70,14 @@ embedder = lambda texts: embed_texts_batched(
     client, settings.embed_model, texts, settings.embed_batch_size
 )
 
-policy = canon.ChunkPolicy(
+policy = core.ChunkPolicy(
     target_tokens=settings.chunk_target_tokens,
     overlap_tokens=settings.chunk_overlap_tokens,
     max_chars=settings.chunk_max_chars,
 )
-chunks = canon.chunk("Cats are small mammals.", policy)
-records = canon.prepare_chunks("doc-1", chunks, tags=["docs"], metadata={"source": "demo"})
-canon.index(
+chunks = core.chunk("Cats are small mammals.", policy)
+records = core.prepare_chunks("doc-1", chunks, tags=["docs"], metadata={"source": "demo"})
+core.index(
     records,
     store,
     collection_id=collection.id,
@@ -85,8 +86,8 @@ canon.index(
     ingest_mode="upsert",
 )
 
-plan = canon.RetrievePlan(mode="vector", k=5)
-candidates = canon.retrieve(
+plan = core.RetrievePlan(mode="vector", k=5)
+candidates = core.retrieve(
     "small mammals",
     plan,
     store,
@@ -123,7 +124,7 @@ curl -sS -X POST http://localhost:8000/v1/collections \
 Chunking notes:
 
 - ragd splits text into word-based chunks with overlap (defaults: `CHUNK_TARGET_TOKENS=600`, `CHUNK_OVERLAP_TOKENS=120` or `CHUNK_OVERLAP_PERCENT=15`).
-- If you have timestamps or speakers, send segment arrays (`{text,t_start,t_end,speaker}`) so chunks carry time metadata for citations.
+- If you have timestamps, send segment arrays (`{text,t_start,t_end}`) so chunks carry time metadata for citations.
 
 Use the helper script to ingest a folder of `.txt` files (each file becomes a document, idempotent by doc_id):
 

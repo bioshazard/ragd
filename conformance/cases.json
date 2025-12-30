@@ -32,20 +32,17 @@
         {
           "text": "Hello there",
           "t_start": 0.0,
-          "t_end": 1.0,
-          "speaker": "A"
+          "t_end": 1.0
         },
         {
           "text": "General Kenobi",
           "t_start": 1.0,
-          "t_end": 2.0,
-          "speaker": "B"
+          "t_end": 2.0
         },
         {
           "text": "You are a bold one",
           "t_start": 2.0,
-          "t_end": 3.0,
-          "speaker": "A"
+          "t_end": 3.0
         }
       ]
     },

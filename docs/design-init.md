@@ -111,7 +111,7 @@ Defaults (configurable per collection):
 * `chunk_max_chars`: ~4000 (upper bound; configurable)
 * Prefer splitting on:
 
-  1. Whisper segment boundaries / speaker turns (if you have them)
+  1. Segment boundaries / topic shifts (if you have them)
   2. Paragraph breaks
   3. Sentence boundaries
   4. Hard fallback: token/window split
@@ -227,7 +227,7 @@ Behavior:
 
 Segment input (optional):
 
-* `content` may be `[{text, t_start?, t_end?, speaker?}, ...]`
+* `content` may be `[{text, t_start?, t_end?}, ...]`
 * ragd converts to chunks, carrying timestamps forward
 
 #### 3) Search (retrieval-only)

@@ -6,7 +6,7 @@ from typing import Any, Sequence
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from ragd.canon import Candidate, ChunkRecord
+from . import Candidate, ChunkRecord
 
 
 @dataclass(frozen=True)

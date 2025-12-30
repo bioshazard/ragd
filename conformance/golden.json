@@ -6,10 +6,6 @@
         "metadata": {
           "segment_end": 1,
           "segment_start": 0,
-          "speakers": [
-            "A",
-            "B"
-          ],
           "t_end": 2.0,
           "t_start": 0.0
         }
@@ -19,9 +15,6 @@
         "metadata": {
           "segment_end": 2,
           "segment_start": 2,
-          "speakers": [
-            "A"
-          ],
           "t_end": 3.0,
           "t_start": 2.0
         }

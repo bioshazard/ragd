@@ -11,7 +11,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from ragd import canon  # noqa: E402
+from ragd.core import (  # noqa: E402
+    Candidate,
+    ChunkPolicy,
+    ChunkRecord,
+    RetrievePlan,
+    chunk,
+    index,
+    prepare_chunks,
+    retrieve,
+)
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -64,7 +73,7 @@ class InMemoryStore:
     def write_chunks(
         self,
         collection_id: int,
-        chunks: list[canon.ChunkRecord],
+        chunks: list[ChunkRecord],
         embeddings: list[list[float]],
     ) -> None:
         for chunk, vector in zip(chunks, embeddings, strict=True):
@@ -87,8 +96,8 @@ class InMemoryStore:
         k: int,
         tags_any: list[str] | None,
         tags_all: list[str] | None,
-    ) -> list[canon.Candidate]:
-        candidates: list[canon.Candidate] = []
+    ) -> list[Candidate]:
+        candidates: list[Candidate] = []
         for record in self._records:
             if record["collection_id"] != collection_id:
                 continue
@@ -99,7 +108,7 @@ class InMemoryStore:
                 continue
             distance = cosine_distance(record["embedding"], query_vector)
             candidates.append(
-                canon.Candidate(
+                Candidate(
                     doc_id=record["doc_id"],
                     chunk_index=record["chunk_index"],
                     content=record["content"],
@@ -118,9 +127,9 @@ class InMemoryStore:
         candidate_pool: int,
         tags_any: list[str] | None,
         tags_all: list[str] | None,
-    ) -> list[canon.Candidate]:
+    ) -> list[Candidate]:
         query_tokens = tokenize(query_text)
-        candidates: list[canon.Candidate] = []
+        candidates: list[Candidate] = []
         for record in self._records:
             if record["collection_id"] != collection_id:
                 continue
@@ -134,7 +143,7 @@ class InMemoryStore:
             if rank <= 0:
                 continue
             candidates.append(
-                canon.Candidate(
+                Candidate(
                     doc_id=record["doc_id"],
                     chunk_index=record["chunk_index"],
                     content=record["content"],
@@ -154,12 +163,12 @@ def load_cases(path: Path) -> dict[str, object]:
 def run_chunking_cases(cases: dict[str, object]) -> dict[str, list[dict[str, object]]]:
     results: dict[str, list[dict[str, object]]] = {}
     for case in cases["chunking"]:
-        policy = canon.ChunkPolicy(**case["policy"])
+        policy = ChunkPolicy(**case["policy"])
         if "segments" in case:
             content = case["segments"]
         else:
             content = case["text"]
-        chunks = canon.chunk(content, policy)
+        chunks = chunk(content, policy)
         results[case["name"]] = [
             {"content": chunk.content, "metadata": chunk.metadata} for chunk in chunks
         ]
@@ -168,16 +177,16 @@ def run_chunking_cases(cases: dict[str, object]) -> dict[str, list[dict[str, obj
 
 def build_store(cases: dict[str, object], embedder: ToyEmbedder) -> InMemoryStore:
     store = InMemoryStore()
-    policy = canon.ChunkPolicy(**cases["ingest_policy"])
+    policy = ChunkPolicy(**cases["ingest_policy"])
     for doc in cases["documents"]:
-        chunks = canon.chunk(doc["content"], policy)
-        prepared = canon.prepare_chunks(
+        chunks = chunk(doc["content"], policy)
+        prepared = prepare_chunks(
             doc["doc_id"],
             chunks,
             tags=doc.get("tags") or [],
             metadata=doc.get("metadata") or {},
         )
-        canon.index(
+        index(
             prepared,
             store,
             collection_id=1,
@@ -195,7 +204,7 @@ def run_retrieval_cases(
 ) -> dict[str, list[dict[str, object]]]:
     results: dict[str, list[dict[str, object]]] = {}
     for case in cases["retrieval"]:
-        plan = canon.RetrievePlan(
+        plan = RetrievePlan(
             mode=case["mode"],
             k=case["k"],
             candidate_pool=case.get("candidate_pool", 50),
@@ -203,7 +212,7 @@ def run_retrieval_cases(
             tags_any=case.get("tags_any"),
             tags_all=case.get("tags_all"),
         )
-        candidates = canon.retrieve(
+        candidates = retrieve(
             case["query"],
             plan,
             store,

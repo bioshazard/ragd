@@ -21,7 +21,6 @@ class SegmentInput(BaseModel):
     text: str
     t_start: float | None = None
     t_end: float | None = None
-    speaker: str | None = None
 
 
 class DocumentIngestRequest(BaseModel):
