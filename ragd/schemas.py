@@ -30,6 +30,9 @@ class DocumentIngestRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     ingest_mode: Literal["replace", "upsert"] = "replace"
+    chunk_target_tokens: int | None = None
+    chunk_overlap_tokens: int | None = None
+    chunk_max_chars: int | None = None
 
 
 class DocumentIngestResponse(BaseModel):

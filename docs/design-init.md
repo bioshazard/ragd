@@ -108,6 +108,7 @@ Defaults (configurable per collection):
 
 * `chunk_target_tokens`: 450–900
 * `chunk_overlap_tokens`: 80–150
+* `chunk_max_chars`: ~4000 (upper bound; configurable)
 * Prefer splitting on:
 
   1. Whisper segment boundaries / speaker turns (if you have them)
@@ -213,6 +214,9 @@ Request:
 * `tags` (string[])
 * `metadata` (object)
 * `ingest_mode`: `"replace"` | `"upsert"` (default replace)
+* `chunk_target_tokens` (optional override)
+* `chunk_overlap_tokens` (optional override)
+* `chunk_max_chars` (optional override)
 
 Behavior:
 

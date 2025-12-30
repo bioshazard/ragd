@@ -1,0 +1,115 @@
+{
+  "version": "0.1.0",
+  "embedder": {
+    "type": "toy-bow",
+    "vocab": [
+      "cat",
+      "dog",
+      "animal",
+      "mammal",
+      "bird",
+      "fish",
+      "loyal",
+      "small",
+      "fast",
+      "sky"
+    ]
+  },
+  "ingest_policy": {
+    "target_tokens": 200,
+    "overlap_tokens": 0,
+    "max_chars": 1000
+  },
+  "chunking": [
+    {
+      "name": "segments-basic",
+      "policy": {
+        "target_tokens": 6,
+        "overlap_tokens": 2,
+        "max_chars": 80
+      },
+      "segments": [
+        {
+          "text": "Hello there",
+          "t_start": 0.0,
+          "t_end": 1.0,
+          "speaker": "A"
+        },
+        {
+          "text": "General Kenobi",
+          "t_start": 1.0,
+          "t_end": 2.0,
+          "speaker": "B"
+        },
+        {
+          "text": "You are a bold one",
+          "t_start": 2.0,
+          "t_end": 3.0,
+          "speaker": "A"
+        }
+      ]
+    },
+    {
+      "name": "text-basic",
+      "policy": {
+        "target_tokens": 8,
+        "overlap_tokens": 2,
+        "max_chars": 60
+      },
+      "text": "Cats are small mammals. Dogs are loyal animals."
+    }
+  ],
+  "documents": [
+    {
+      "doc_id": "doc-1",
+      "content": "Cats are small mammals. Cats like naps.",
+      "tags": ["pets"],
+      "metadata": {"source": "d1"}
+    },
+    {
+      "doc_id": "doc-2",
+      "content": "Dogs are loyal animals. Dogs are fast.",
+      "tags": ["pets"],
+      "metadata": {"source": "d2"}
+    },
+    {
+      "doc_id": "doc-3",
+      "content": "Birds fly in the sky. Birds are animals.",
+      "tags": ["wild"],
+      "metadata": {"source": "d3"}
+    },
+    {
+      "doc_id": "doc-4",
+      "content": "Fish swim in the sea.",
+      "tags": ["wild"],
+      "metadata": {"source": "d4"}
+    }
+  ],
+  "retrieval": [
+    {
+      "name": "vector-cats",
+      "query": "small cats",
+      "mode": "vector",
+      "k": 3
+    },
+    {
+      "name": "vector-loyal",
+      "query": "loyal dogs",
+      "mode": "vector",
+      "k": 3
+    },
+    {
+      "name": "hybrid-animals",
+      "query": "animals",
+      "mode": "hybrid",
+      "k": 3
+    },
+    {
+      "name": "vector-tag-filter",
+      "query": "animals",
+      "mode": "vector",
+      "k": 3,
+      "tags_any": ["wild"]
+    }
+  ]
+}

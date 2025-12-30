@@ -32,7 +32,70 @@ uvicorn ragd.main:app --reload
 - Create an API key via `POST /v1/api-keys`.
 - The service uses the OpenAI Python client against your OpenAI-compatible endpoint.
 - HNSW vector indexing requires a fixed vector dimension; see `scripts/init_db.sql` for a manual index example.
+- Chunking defaults are env-driven (`CHUNK_TARGET_TOKENS`, `CHUNK_OVERLAP_TOKENS`, `CHUNK_MAX_CHARS`).
 - Reset all data (keep schema): `scripts/reset_db.sh` (or `psql "$DATABASE_URL" -f scripts/reset_db.sql`)
+
+## Canonical library
+
+The retrieval blocks live in `ragd.canon` and are the source of truth for REST/MCP.
+
+- Spec: `docs/canon-spec.md`
+- Conformance: `python3 scripts/conformance.py`
+
+Library usage (Postgres-backed example):
+
+```python
+from ragd import canon
+from ragd.config import load_settings
+from ragd.db import init_pool, get_pool
+from ragd.embeddings import build_client, embed_texts_batched
+from ragd.store import PostgresStore
+
+settings = load_settings()
+init_pool(settings.database_url)
+store = PostgresStore(get_pool())
+
+collection = store.get_collection("docs")
+if not collection:
+    collection = store.create_collection(
+        "docs",
+        embed_model=settings.embed_model,
+        embed_dims=settings.embed_dims,
+        hybrid_enabled=True,
+    )
+
+client = build_client(settings.openai_base_url, settings.openai_api_key)
+embedder = lambda texts: embed_texts_batched(
+    client, settings.embed_model, texts, settings.embed_batch_size
+)
+
+policy = canon.ChunkPolicy(
+    target_tokens=settings.chunk_target_tokens,
+    overlap_tokens=settings.chunk_overlap_tokens,
+    max_chars=settings.chunk_max_chars,
+)
+chunks = canon.chunk("Cats are small mammals.", policy)
+records = canon.prepare_chunks("doc-1", chunks, tags=["docs"], metadata={"source": "demo"})
+canon.index(
+    records,
+    store,
+    collection_id=collection.id,
+    embedder=embedder,
+    embed_dims=settings.embed_dims,
+    ingest_mode="upsert",
+)
+
+plan = canon.RetrievePlan(mode="vector", k=5)
+candidates = canon.retrieve(
+    "small mammals",
+    plan,
+    store,
+    collection_id=collection.id,
+    embedder=embedder,
+    embed_dims=settings.embed_dims,
+    hybrid_enabled=collection.hybrid_enabled,
+)
+```
 
 ## Usage guide
 

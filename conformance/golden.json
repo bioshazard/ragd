@@ -1,0 +1,95 @@
+{
+  "chunking": {
+    "segments-basic": [
+      {
+        "content": "Hello there General Kenobi",
+        "metadata": {
+          "segment_end": 1,
+          "segment_start": 0,
+          "speakers": [
+            "A",
+            "B"
+          ],
+          "t_end": 2.0,
+          "t_start": 0.0
+        }
+      },
+      {
+        "content": "General Kenobi You are a bold one",
+        "metadata": {
+          "segment_end": 2,
+          "segment_start": 2,
+          "speakers": [
+            "A"
+          ],
+          "t_end": 3.0,
+          "t_start": 2.0
+        }
+      }
+    ],
+    "text-basic": [
+      {
+        "content": "Cats are small mammals. Dogs are loyal animals.",
+        "metadata": {
+          "segment_end": 0,
+          "segment_start": 0
+        }
+      }
+    ]
+  },
+  "retrieval": {
+    "hybrid-animals": [
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-2"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-3"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-1"
+      }
+    ],
+    "vector-cats": [
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-1"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-2"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-3"
+      }
+    ],
+    "vector-loyal": [
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-2"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-1"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-3"
+      }
+    ],
+    "vector-tag-filter": [
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-3"
+      },
+      {
+        "chunk_index": 0,
+        "doc_id": "doc-4"
+      }
+    ]
+  },
+  "version": "0.1.0"
+}

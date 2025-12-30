@@ -2,19 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from openai import OpenAI
-from psycopg.types.json import Json
 from pydantic import ValidationError
 
-from ragd import auth
-from ragd.chunking import build_units, chunk_units
+from ragd import auth, canon
 from ragd.config import Settings, load_settings
 from ragd.db import init_pool, get_pool
-from ragd.embeddings import build_client, embed_texts
+from ragd.embeddings import build_client, embed_texts_batched
 from ragd.schemas import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
@@ -29,6 +27,7 @@ from ragd.schemas import (
     SearchResponse,
     SearchResult,
 )
+from ragd.store import PostgresStore
 
 app = FastAPI(title="ragd")
 
@@ -37,336 +36,35 @@ MCP_TOOL_SEARCH_NAME = "collections-search"
 MCP_TOOL_LIST_NAME = "collections-list"
 
 
-def _vector_literal(vector: list[float]) -> str:
-    return "[" + ",".join(repr(value) for value in vector) + "]"
-
-
-def _ensure_collection_embeddings(settings: Settings, collection_row: dict[str, Any]) -> None:
-    if (
-        collection_row["embed_model"] != settings.embed_model
-        or collection_row["embed_dims"] != settings.embed_dims
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Collection embedding config does not match server settings",
+def _embedder(settings: Settings, client: OpenAI) -> Callable[[list[str]], list[list[float]]]:
+    def _call(texts: list[str]) -> list[list[float]]:
+        return embed_texts_batched(
+            client,
+            settings.embed_model,
+            texts,
+            settings.embed_batch_size,
         )
 
-
-def _get_collection(name: str) -> dict[str, Any]:
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, name, embed_model, embed_dims, hybrid_enabled
-                FROM collections
-                WHERE name = %s
-                """,
-                (name,),
-            )
-            row = cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    return {
-        "id": row[0],
-        "name": row[1],
-        "embed_model": row[2],
-        "embed_dims": row[3],
-        "hybrid_enabled": row[4],
-    }
+    return _call
 
 
-def _embed_texts(settings: Settings, client: OpenAI, model: str, texts: list[str]) -> list[list[float]]:
-    vectors: list[list[float]] = []
-    batch_size = settings.embed_batch_size
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
-        vectors.extend(embed_texts(client, model, batch))
-    return vectors
-
-
-def _ensure_dims(vectors: list[list[float]], dims: int) -> None:
-    if any(len(vector) != dims for vector in vectors):
-        raise HTTPException(status_code=400, detail="Embedding dimension mismatch")
-
-
-def _upsert_document(
-    collection_id: int,
-    doc_id: str,
-    request: DocumentIngestRequest,
-) -> None:
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO documents (collection_id, doc_id, title, tags, metadata, source)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (collection_id, doc_id)
-                DO UPDATE SET
-                    title = EXCLUDED.title,
-                    tags = EXCLUDED.tags,
-                    metadata = EXCLUDED.metadata,
-                    source = EXCLUDED.source,
-                    updated_at = NOW()
-                """,
-                (
-                    collection_id,
-                    doc_id,
-                    request.title,
-                    request.tags,
-                    Json(request.metadata),
-                    None,
-                ),
-            )
-        conn.commit()
-
-
-def _delete_chunks(collection_id: int, doc_id: str) -> None:
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM chunks WHERE collection_id = %s AND doc_id = %s",
-                (collection_id, doc_id),
-            )
-        conn.commit()
-
-
-def _write_chunks(
-    collection_id: int,
-    doc_id: str,
-    chunks: list[dict[str, Any]],
-) -> None:
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO chunks (
-                    collection_id, doc_id, chunk_index, content, tags, metadata, embedding
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s::vector)
-                ON CONFLICT (collection_id, doc_id, chunk_index)
-                DO UPDATE SET
-                    content = EXCLUDED.content,
-                    tags = EXCLUDED.tags,
-                    metadata = EXCLUDED.metadata,
-                    embedding = EXCLUDED.embedding
-                """,
-                [
-                    (
-                        collection_id,
-                        doc_id,
-                        chunk["chunk_index"],
-                        chunk["content"],
-                        chunk["tags"],
-                        Json(chunk["metadata"]),
-                        chunk["embedding"],
-                    )
-                    for chunk in chunks
-                ],
-            )
-        conn.commit()
-
-
-def _build_chunk_payloads(
-    doc_id: str,
-    request: DocumentIngestRequest,
-    settings: Settings,
-) -> tuple[list[dict[str, Any]], int]:
-    content = request.content
-    if isinstance(content, list):
-        segment_dicts = [segment.model_dump() for segment in content]
-        units = build_units(segment_dicts)
-    else:
-        units = build_units(content)
-
-    raw_chunks = chunk_units(
-        units,
-        target_tokens=settings.chunk_target_tokens,
-        overlap_tokens=settings.chunk_overlap_tokens,
+def _chunk_policy(settings: Settings, request: DocumentIngestRequest) -> canon.ChunkPolicy:
+    target_tokens = (
+        settings.chunk_target_tokens
+        if request.chunk_target_tokens is None
+        else request.chunk_target_tokens
     )
-
-    chunks: list[dict[str, Any]] = []
-    tokens_estimated = 0
-    for idx, chunk in enumerate(raw_chunks):
-        metadata = dict(request.metadata)
-        metadata.update(chunk.metadata)
-        metadata["chunk_index"] = idx
-        tokens_estimated += len(chunk.text.split())
-
-        chunks.append(
-            {
-                "chunk_index": idx,
-                "content": chunk.text,
-                "tags": request.tags,
-                "metadata": metadata,
-            }
-        )
-
-    return chunks, tokens_estimated
-
-
-def _vector_search(
-    collection_id: int,
-    query_vector: list[float],
-    k: int,
-    tags_any: list[str] | None,
-    tags_all: list[str] | None,
-) -> list[SearchResult]:
-    clauses = ["collection_id = %s"]
-    where_params: list[Any] = [collection_id]
-    if tags_any:
-        clauses.append("tags && %s")
-        where_params.append(tags_any)
-    if tags_all:
-        clauses.append("tags @> %s")
-        where_params.append(tags_all)
-
-    where = " AND ".join(clauses)
-    vector_param = _vector_literal(query_vector)
-    params: list[Any] = [vector_param]
-    params.extend(where_params)
-    params.append(vector_param)
-    params.append(k)
-
-    sql = f"""
-        SELECT doc_id, chunk_index, content, embedding <=> %s::vector AS distance, metadata, tags
-        FROM chunks
-        WHERE {where}
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s
-    """
-
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-
-    results = []
-    for row in rows:
-        results.append(
-            SearchResult(
-                doc_id=row[0],
-                chunk_index=row[1],
-                content=row[2],
-                score=float(row[3]),
-                metadata=row[4] or {},
-                tags=row[5] or [],
-            )
-        )
-    return results
-
-
-def _fts_search(
-    collection_id: int,
-    query: str,
-    candidate_pool: int,
-    tags_any: list[str] | None,
-    tags_all: list[str] | None,
-) -> list[tuple[str, int, float, str, dict[str, Any], list[str]]]:
-    clauses = ["collection_id = %s", "fts @@ plainto_tsquery('english', %s)"]
-    where_params: list[Any] = [collection_id, query]
-    if tags_any:
-        clauses.append("tags && %s")
-        where_params.append(tags_any)
-    if tags_all:
-        clauses.append("tags @> %s")
-        where_params.append(tags_all)
-
-    where = " AND ".join(clauses)
-    params: list[Any] = [query]
-    params.extend(where_params)
-    params.append(candidate_pool)
-
-    sql = f"""
-        SELECT doc_id, chunk_index, ts_rank_cd(fts, plainto_tsquery('english', %s)) AS rank, content, metadata, tags
-        FROM chunks
-        WHERE {where}
-        ORDER BY rank DESC
-        LIMIT %s
-    """
-
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-
-    return rows
-
-
-def _hybrid_search(
-    settings: Settings,
-    collection_id: int,
-    query_vector: list[float],
-    query_text: str,
-    k: int,
-    tags_any: list[str] | None,
-    tags_all: list[str] | None,
-) -> list[SearchResult]:
-    vector_candidates = _vector_search(
-        collection_id,
-        query_vector,
-        settings.search_candidate_pool,
-        tags_any,
-        tags_all,
+    overlap_tokens = (
+        settings.chunk_overlap_tokens
+        if request.chunk_overlap_tokens is None
+        else request.chunk_overlap_tokens
     )
-    fts_candidates = _fts_search(
-        collection_id,
-        query_text,
-        settings.search_candidate_pool,
-        tags_any,
-        tags_all,
+    max_chars = settings.chunk_max_chars if request.chunk_max_chars is None else request.chunk_max_chars
+    return canon.ChunkPolicy(
+        target_tokens=target_tokens,
+        overlap_tokens=overlap_tokens,
+        max_chars=max_chars,
     )
-
-    scored: dict[tuple[str, int], dict[str, Any]] = {}
-    rrf_k = settings.search_rrf_k
-
-    for idx, item in enumerate(vector_candidates, start=1):
-        key = (item.doc_id, item.chunk_index)
-        scored.setdefault(
-            key,
-            {
-                "doc_id": item.doc_id,
-                "chunk_index": item.chunk_index,
-                "content": item.content,
-                "metadata": item.metadata,
-                "tags": item.tags,
-                "score": 0.0,
-            },
-        )
-        scored[key]["score"] += 1.0 / (rrf_k + idx)
-
-    for idx, row in enumerate(fts_candidates, start=1):
-        key = (row[0], row[1])
-        scored.setdefault(
-            key,
-            {
-                "doc_id": row[0],
-                "chunk_index": row[1],
-                "content": row[3],
-                "metadata": row[4] or {},
-                "tags": row[5] or [],
-                "score": 0.0,
-            },
-        )
-        scored[key]["score"] += 1.0 / (rrf_k + idx)
-
-    merged = sorted(scored.values(), key=lambda item: item["score"], reverse=True)
-    return [
-        SearchResult(
-            doc_id=item["doc_id"],
-            chunk_index=item["chunk_index"],
-            content=item["content"],
-            score=float(item["score"]),
-            metadata=item["metadata"],
-            tags=item["tags"],
-        )
-        for item in merged[:k]
-    ]
 
 
 def _default_system_prompt() -> str:
@@ -377,28 +75,6 @@ def _default_system_prompt() -> str:
     )
 
 
-def _ensure_embedding_index(cur, embed_dims: int) -> None:
-    cur.execute(
-        """
-        SELECT CASE WHEN a.atttypmod > 0 THEN a.atttypmod - 4 ELSE NULL END
-        FROM pg_attribute a
-        WHERE a.attrelid = 'chunks'::regclass
-          AND a.attname = 'embedding'
-          AND a.attnum > 0
-          AND NOT a.attisdropped
-        """
-    )
-    row = cur.fetchone()
-    current_dim = row[0] if row else None
-    if current_dim is None or current_dim != embed_dims:
-        cur.execute(
-            f"ALTER TABLE chunks ALTER COLUMN embedding TYPE vector({embed_dims});"
-        )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
-    )
-
-
 @app.on_event("startup")
 def startup() -> None:
     settings = load_settings()
@@ -406,6 +82,8 @@ def startup() -> None:
     app.state.settings = settings
     app.state.embed_client = build_client(settings.openai_base_url, settings.openai_api_key)
     app.state.llm_client = build_client(settings.llm_base_url, settings.llm_api_key)
+    app.state.store = PostgresStore(get_pool())
+    app.state.embedder = _embedder(settings, app.state.embed_client)
 
     if settings.auto_migrate:
         schema_path = Path(__file__).parent / "sql" / "schema.sql"
@@ -414,8 +92,8 @@ def startup() -> None:
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(schema_sql)
-                _ensure_embedding_index(cur, settings.embed_dims)
             conn.commit()
+        app.state.store.ensure_embedding_index(settings.embed_dims)
 
 
 @app.get("/v1/health", operation_id="health")
@@ -427,10 +105,11 @@ def health() -> dict[str, str]:
             cur.execute("SELECT 1")
             cur.fetchone()
 
-    client: OpenAI = app.state.embed_client
+    embedder = app.state.embedder
     try:
-        vectors = embed_texts(client, settings.embed_model, ["ping"])
-        _ensure_dims(vectors, settings.embed_dims)
+        vectors = embedder(["ping"])
+        if not vectors or len(vectors[0]) != settings.embed_dims:
+            raise RuntimeError("Embedding dimension mismatch")
     except Exception as exc:  # pragma: no cover - depends on external service
         raise HTTPException(status_code=503, detail=f"Embedding backend error: {exc}") from exc
 
@@ -445,31 +124,18 @@ def health() -> dict[str, str]:
 )
 def create_collection(request: CollectionCreateRequest) -> CollectionResponse:
     settings: Settings = app.state.settings
-    embed_model = settings.embed_model
-    embed_dims = settings.embed_dims
-
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO collections (name, embed_model, embed_dims, hybrid_enabled)
-                VALUES (%s, %s, %s, %s)
-                RETURNING name, embed_model, embed_dims, hybrid_enabled
-                """,
-                (request.name, embed_model, embed_dims, request.hybrid_enabled),
-            )
-            row = cur.fetchone()
-        conn.commit()
-
-    if not row:
-        raise HTTPException(status_code=500, detail="Failed to create collection")
-
+    store: PostgresStore = app.state.store
+    collection = store.create_collection(
+        request.name,
+        embed_model=settings.embed_model,
+        embed_dims=settings.embed_dims,
+        hybrid_enabled=request.hybrid_enabled,
+    )
     return CollectionResponse(
-        name=row[0],
-        embed_model=row[1],
-        embed_dims=row[2],
-        hybrid_enabled=row[3],
+        name=collection.name,
+        embed_model=collection.embed_model,
+        embed_dims=collection.embed_dims,
+        hybrid_enabled=collection.hybrid_enabled,
     )
 
 
@@ -480,22 +146,16 @@ def create_collection(request: CollectionCreateRequest) -> CollectionResponse:
     operation_id="collections-list",
 )
 def list_collections() -> list[CollectionResponse]:
-    pool = get_pool()
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT name, embed_model, embed_dims, hybrid_enabled FROM collections ORDER BY name"
-            )
-            rows = cur.fetchall()
-
+    store: PostgresStore = app.state.store
+    collections = store.list_collections()
     return [
         CollectionResponse(
-            name=row[0],
-            embed_model=row[1],
-            embed_dims=row[2],
-            hybrid_enabled=row[3],
+            name=collection.name,
+            embed_model=collection.embed_model,
+            embed_dims=collection.embed_dims,
+            hybrid_enabled=collection.hybrid_enabled,
         )
-        for row in rows
+        for collection in collections
     ]
 
 
@@ -508,33 +168,56 @@ def list_collections() -> list[CollectionResponse]:
 def ingest_document(
     collection: str, doc_id: str, request: DocumentIngestRequest
 ) -> DocumentIngestResponse:
-    collection_row = _get_collection(collection)
+    store: PostgresStore = app.state.store
+    collection_row = store.get_collection(collection)
+    if not collection_row:
+        raise HTTPException(status_code=404, detail="Collection not found")
     settings: Settings = app.state.settings
-    _ensure_collection_embeddings(settings, collection_row)
-    embed_model = settings.embed_model
-    embed_dims = settings.embed_dims
+    try:
+        canon.ensure_collection_embeddings(
+            collection_embed_model=collection_row.embed_model,
+            collection_embed_dims=collection_row.embed_dims,
+            expected_embed_model=settings.embed_model,
+            expected_embed_dims=settings.embed_dims,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    _upsert_document(collection_row["id"], doc_id, request)
+    store.upsert_document(
+        collection_id=collection_row.id,
+        doc_id=doc_id,
+        title=request.title,
+        tags=request.tags,
+        metadata=request.metadata,
+        source=None,
+    )
 
-    if request.ingest_mode == "replace":
-        _delete_chunks(collection_row["id"], doc_id)
-
-    chunks, tokens_estimated = _build_chunk_payloads(doc_id, request, settings)
+    policy = _chunk_policy(settings, request)
+    chunks = canon.chunk(request.content, policy)
     if not chunks:
         raise HTTPException(status_code=400, detail="No content to ingest")
 
-    texts = [chunk["content"] for chunk in chunks]
-    vectors = _embed_texts(settings, app.state.embed_client, embed_model, texts)
-    _ensure_dims(vectors, embed_dims)
-
-    for chunk, vector in zip(chunks, vectors, strict=True):
-        chunk["embedding"] = _vector_literal(vector)
-
-    _write_chunks(collection_row["id"], doc_id, chunks)
+    prepared = canon.prepare_chunks(
+        doc_id,
+        chunks,
+        tags=request.tags,
+        metadata=request.metadata,
+    )
+    try:
+        result = canon.index(
+            prepared,
+            store,
+            collection_id=collection_row.id,
+            embedder=app.state.embedder,
+            embed_dims=settings.embed_dims,
+            ingest_mode=request.ingest_mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return DocumentIngestResponse(
-        chunks_written=len(chunks),
-        tokens_estimated=tokens_estimated,
+        chunks_written=result.chunks_written,
+        tokens_estimated=result.tokens_estimated,
     )
 
 
@@ -545,34 +228,56 @@ def ingest_document(
     operation_id="collections-search",
 )
 def search(collection: str, request: SearchRequest) -> SearchResponse:
-    collection_row = _get_collection(collection)
-    if request.mode == "hybrid" and not collection_row["hybrid_enabled"]:
+    store: PostgresStore = app.state.store
+    collection_row = store.get_collection(collection)
+    if not collection_row:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if request.mode == "hybrid" and not collection_row.hybrid_enabled:
         raise HTTPException(status_code=400, detail="Hybrid search disabled for collection")
 
     settings: Settings = app.state.settings
-    _ensure_collection_embeddings(settings, collection_row)
-    vectors = _embed_texts(settings, app.state.embed_client, settings.embed_model, [request.query])
-    _ensure_dims(vectors, settings.embed_dims)
-
-    if request.mode == "vector":
-        results = _vector_search(
-            collection_row["id"],
-            vectors[0],
-            request.k,
-            request.tags_any,
-            request.tags_all,
+    try:
+        canon.ensure_collection_embeddings(
+            collection_embed_model=collection_row.embed_model,
+            collection_embed_dims=collection_row.embed_dims,
+            expected_embed_model=settings.embed_model,
+            expected_embed_dims=settings.embed_dims,
         )
-    else:
-        results = _hybrid_search(
-            settings,
-            collection_row["id"],
-            vectors[0],
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    plan = canon.RetrievePlan(
+        mode=request.mode,
+        k=request.k,
+        candidate_pool=settings.search_candidate_pool,
+        rrf_k=settings.search_rrf_k,
+        tags_any=request.tags_any,
+        tags_all=request.tags_all,
+    )
+    try:
+        candidates = canon.retrieve(
             request.query,
-            request.k,
-            request.tags_any,
-            request.tags_all,
+            plan,
+            store,
+            collection_id=collection_row.id,
+            embedder=app.state.embedder,
+            embed_dims=settings.embed_dims,
+            hybrid_enabled=collection_row.hybrid_enabled,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    results = [
+        SearchResult(
+            doc_id=item.doc_id,
+            chunk_index=item.chunk_index,
+            content=item.content,
+            score=item.score,
+            metadata=item.metadata,
+            tags=list(item.tags),
+        )
+        for item in candidates
+    ]
     return SearchResponse(results=results)
 
 

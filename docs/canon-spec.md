@@ -92,7 +92,8 @@ Functions are pure (deterministic for a given input + config) where possible.
 
 ### 2.1 Types (conceptual)
 
-- Chunk: { doc_id, chunk_index, content, tags, metadata }
+- Chunk: { content, metadata }
+- ChunkRecord: { doc_id, chunk_index, content, tags, metadata }
 - Embed: list[float] length = embed_dims
 - Candidate: { doc_id, chunk_index, content, score, tags, metadata }
 
@@ -102,10 +103,13 @@ Functions are pure (deterministic for a given input + config) where possible.
 def chunk(text_or_segments, policy) -> list[Chunk]:
     """Deterministic chunking with stable chunk_index ordering."""
 
-def index(chunks, store) -> dict:
-    """Upsert chunks + embeddings into the store. Returns counts/handles."""
+def prepare_chunks(doc_id, chunks, tags=None, metadata=None) -> list[ChunkRecord]:
+    """Attach doc-level metadata + deterministic chunk_index for indexing."""
 
-def retrieve(query, plan, store) -> list[Candidate]:
+def index(chunks, store, *, collection_id, embedder, embed_dims, ingest_mode="upsert") -> IndexResult:
+    """Embed + upsert chunks into the store. Returns counts."""
+
+def retrieve(query, plan, store, *, collection_id, embedder, embed_dims, hybrid_enabled=False) -> list[Candidate]:
     """Generate candidates (vector/lexical), apply filters, return ordered list."""
 
 def fuse(candidate_sets, method="rrf", params=None) -> list[Candidate]:
@@ -189,6 +193,12 @@ Schema details remain aligned with docs/design-init.md.
 - Spec versions are semver
 - Breaking changes require new major spec version
 - Golden vectors are pinned per spec version
+
+### 5.4 Conformance harness
+
+- Cases live in `conformance/cases.json`
+- Golden outputs live in `conformance/golden.json`
+- Runner: `python3 scripts/conformance.py`
 
 ---
 

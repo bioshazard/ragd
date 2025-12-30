@@ -14,6 +14,7 @@ class Settings:
     llm_api_key: str
     chunk_target_tokens: int
     chunk_overlap_tokens: int
+    chunk_max_chars: int
     embed_batch_size: int
     search_candidate_pool: int
     search_rrf_k: int
@@ -113,6 +114,9 @@ def load_settings() -> Settings:
             chunk_overlap_tokens = int(round(chunk_target_tokens * overlap_ratio))
         else:
             chunk_overlap_tokens = 120
+    chunk_max_chars = _get_int("CHUNK_MAX_CHARS", 4000)
+    if chunk_max_chars <= 0:
+        raise RuntimeError("CHUNK_MAX_CHARS must be positive")
 
     return Settings(
         database_url=database_url,
@@ -125,6 +129,7 @@ def load_settings() -> Settings:
         llm_api_key=llm_api_key,
         chunk_target_tokens=chunk_target_tokens,
         chunk_overlap_tokens=chunk_overlap_tokens,
+        chunk_max_chars=chunk_max_chars,
         embed_batch_size=_get_int("EMBED_BATCH_SIZE", 64),
         search_candidate_pool=_get_int("SEARCH_CANDIDATE_POOL", 50),
         search_rrf_k=_get_int("SEARCH_RRF_K", 60),
