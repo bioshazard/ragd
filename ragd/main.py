@@ -33,7 +33,8 @@ from ragd.schemas import (
 app = FastAPI(title="ragd")
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
-MCP_TOOL_NAME = "collections-search"
+MCP_TOOL_SEARCH_NAME = "collections-search"
+MCP_TOOL_LIST_NAME = "collections-list"
 
 
 def _vector_literal(vector: list[float]) -> str:
@@ -677,9 +678,9 @@ def _mcp_error(request_id: Any, code: int, message: str, data: Any | None = None
     return JSONResponse({"jsonrpc": "2.0", "id": request_id, "error": error})
 
 
-def _mcp_tool_schema() -> dict[str, Any]:
+def _mcp_tool_schema_search() -> dict[str, Any]:
     return {
-        "name": MCP_TOOL_NAME,
+        "name": MCP_TOOL_SEARCH_NAME,
         "title": "Collection Search",
         "description": "Run a vector or hybrid search against a collection.",
         "inputSchema": {
@@ -721,9 +722,21 @@ def _mcp_tool_schema() -> dict[str, Any]:
     }
 
 
+def _mcp_tool_schema_list() -> dict[str, Any]:
+    return {
+        "name": MCP_TOOL_LIST_NAME,
+        "title": "Collections List",
+        "description": "List available collections.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    }
+
+
 def _mcp_tools_list(request_id: Any) -> JSONResponse:
     result = {
-        "tools": [_mcp_tool_schema()],
+        "tools": [_mcp_tool_schema_search(), _mcp_tool_schema_list()],
         "nextCursor": None,
     }
     return _mcp_result(request_id, result)
@@ -734,44 +747,59 @@ def _mcp_tools_call(request_id: Any, params: Any) -> JSONResponse:
         return _mcp_error(request_id, -32602, "Invalid params")
 
     tool_name = params.get("name")
-    if tool_name != MCP_TOOL_NAME:
-        return _mcp_error(request_id, -32601, "Tool not found")
-
     arguments = params.get("arguments") or {}
     if not isinstance(arguments, dict):
         return _mcp_error(request_id, -32602, "Invalid params")
 
-    collection = arguments.get("collection")
-    query = arguments.get("query")
-    if not collection or not query:
-        return _mcp_error(request_id, -32602, "Missing required arguments")
+    if tool_name == MCP_TOOL_SEARCH_NAME:
+        collection = arguments.get("collection")
+        query = arguments.get("query")
+        if not collection or not query:
+            return _mcp_error(request_id, -32602, "Missing required arguments")
 
-    try:
-        search_request = SearchRequest(
-            query=query,
-            k=arguments.get("k", 12),
-            mode=arguments.get("mode", "vector"),
-            tags_any=arguments.get("tags_any"),
-            tags_all=arguments.get("tags_all"),
+        try:
+            search_request = SearchRequest(
+                query=query,
+                k=arguments.get("k", 12),
+                mode=arguments.get("mode", "vector"),
+                tags_any=arguments.get("tags_any"),
+                tags_all=arguments.get("tags_all"),
+            )
+        except ValidationError as exc:
+            return _mcp_error(request_id, -32602, "Invalid params", exc.errors())
+
+        try:
+            search_response = search(collection, search_request)
+        except HTTPException as exc:
+            return _mcp_error(request_id, -32000, str(exc.detail))
+        except Exception as exc:  # pragma: no cover - defensive
+            return _mcp_error(request_id, -32603, "Internal error", str(exc))
+
+        payload = json.dumps(search_response.model_dump(), ensure_ascii=True)
+        return _mcp_result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": payload}],
+                "isError": False,
+            },
         )
-    except ValidationError as exc:
-        return _mcp_error(request_id, -32602, "Invalid params", exc.errors())
 
-    try:
-        search_response = search(collection, search_request)
-    except HTTPException as exc:
-        return _mcp_error(request_id, -32000, str(exc.detail))
-    except Exception as exc:  # pragma: no cover - defensive
-        return _mcp_error(request_id, -32603, "Internal error", str(exc))
+    if tool_name == MCP_TOOL_LIST_NAME:
+        try:
+            collections = list_collections()
+        except Exception as exc:  # pragma: no cover - defensive
+            return _mcp_error(request_id, -32603, "Internal error", str(exc))
 
-    payload = json.dumps(search_response.model_dump(), ensure_ascii=True)
-    return _mcp_result(
-        request_id,
-        {
-            "content": [{"type": "text", "text": payload}],
-            "isError": False,
-        },
-    )
+        payload = json.dumps([item.model_dump() for item in collections], ensure_ascii=True)
+        return _mcp_result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": payload}],
+                "isError": False,
+            },
+        )
+
+    return _mcp_error(request_id, -32601, "Tool not found")
 
 
 @app.get(

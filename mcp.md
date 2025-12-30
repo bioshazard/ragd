@@ -63,3 +63,21 @@ cat <<'JSON' | restish local mcp \
 }
 JSON
 ```
+
+## 4) Call collections-list
+
+```bash
+cat <<'JSON' | restish local mcp \
+  -H "Authorization: Bearer $RAGD_API_KEY" \
+  --rsh-raw --rsh-verbose
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "collections-list",
+    "arguments": {}
+  }
+}
+JSON
+```
