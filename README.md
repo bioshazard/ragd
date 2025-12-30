@@ -32,6 +32,7 @@ uvicorn ragd.main:app --reload
 - Create an API key via `POST /v1/api-keys`.
 - The service uses the OpenAI Python client against your OpenAI-compatible endpoint.
 - HNSW vector indexing requires a fixed vector dimension; see `scripts/init_db.sql` for a manual index example.
+- Reset all data (keep schema): `scripts/reset_db.sh` (or `psql "$DATABASE_URL" -f scripts/reset_db.sql`)
 
 ## Usage guide
 
