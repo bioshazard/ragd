@@ -29,9 +29,9 @@ Represents a namespace/corpus.
 Fields:
 
 * `id` (pk)
-* `name` (unique, e.g. `"podcast"`)
-* `embed_model` (text; default `"nomic-embed-text"`)
-* `embed_dims` (int; set once at collection creation by probing Ollama; do not change)
+* `name` (unique, e.g. `"docs"`)
+* `embed_model` (text; set from server config)
+* `embed_dims` (int; set from server config; do not change)
 * `created_at`
 
 Rules:
@@ -54,12 +54,12 @@ Rules:
 
 ### 3) `documents`
 
-Logical doc record (episode transcript).
+Logical doc record (e.g., transcript).
 
 Fields:
 
 * `collection_id` (fk)
-* `doc_id` (string; caller-provided stable ID, e.g. `"ep-0130"`)
+* `doc_id` (string; caller-provided stable ID, e.g. `"doc-0130"`)
 * `title` (optional)
 * `tags` (text array; free-form)
 * `metadata` (jsonb; free-form)
@@ -82,7 +82,7 @@ Fields:
 * `chunk_index` (int; 0..n, deterministic)
 * `content` (text; the chunk)
 * `tags` (text array; default empty)
-* `metadata` (jsonb; include at least episode/time anchors if present)
+* `metadata` (jsonb; include time anchors if present)
 * `embedding` (vector; dims must equal `collections.embed_dims`) ([GitHub][4])
 * Optional for hybrid: `fts` (tsvector) computed from content
 
@@ -100,7 +100,7 @@ Indexes:
 
 ---
 
-## Chunking rules (podcast transcripts)
+## Chunking rules (long-form transcripts)
 
 Goal: stable chunk IDs + good semantic recall.
 
@@ -117,7 +117,7 @@ Defaults (configurable per collection):
 
 Required metadata per chunk (strongly recommended):
 
-* `episode_id` (same as doc_id)
+* `doc_id` (same as `documents.doc_id`)
 * `segment_index` or `chunk_index`
 * If available: `t_start`, `t_end` (seconds) for citations
 
@@ -132,8 +132,8 @@ ragd MUST support:
 
 Collection creation MUST:
 
-* probe dims by embedding a short string once and taking vector length
-* persist as `collections.embed_dims`
+* use the server-configured `EMBED_MODEL` + `EMBED_DIMS`
+* persist both to `collections` (no per-request override)
 
 ---
 
@@ -196,7 +196,6 @@ Server behavior:
 Request:
 
 * `name` (string)
-* `embed_model` (string; default `nomic-embed-text`)
 * `hybrid_enabled` (bool; default false)
   Response:
 * `collection`: `{ name, embed_model, embed_dims, hybrid_enabled }`

@@ -14,7 +14,7 @@ from ragd import auth
 from ragd.chunking import build_units, chunk_units
 from ragd.config import Settings, load_settings
 from ragd.db import init_pool, get_pool
-from ragd.embeddings import build_client, embed_texts, probe_embed_dims
+from ragd.embeddings import build_client, embed_texts
 from ragd.schemas import (
     ApiKeyCreateRequest,
     ApiKeyCreateResponse,
@@ -38,6 +38,17 @@ MCP_TOOL_NAME = "collections-search"
 
 def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(repr(value) for value in vector) + "]"
+
+
+def _ensure_collection_embeddings(settings: Settings, collection_row: dict[str, Any]) -> None:
+    if (
+        collection_row["embed_model"] != settings.embed_model
+        or collection_row["embed_dims"] != settings.embed_dims
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Collection embedding config does not match server settings",
+        )
 
 
 def _get_collection(name: str) -> dict[str, Any]:
@@ -180,10 +191,7 @@ def _build_chunk_payloads(
     tokens_estimated = 0
     for idx, chunk in enumerate(raw_chunks):
         metadata = dict(request.metadata)
-        if request.title and "episode_title" not in metadata:
-            metadata["episode_title"] = request.title
         metadata.update(chunk.metadata)
-        metadata["episode_id"] = doc_id
         metadata["chunk_index"] = idx
         tokens_estimated += len(chunk.text.split())
 
@@ -362,9 +370,37 @@ def _hybrid_search(
 
 def _default_system_prompt() -> str:
     return (
-        "You answer questions using the provided transcript chunks. "
+        "You answer questions using the provided document chunks. "
         "Cite sources inline like [doc_id @ t_start-t_end] or [doc_id] if time is missing. "
         "If the answer is not in the sources, say you don't know."
+    )
+
+
+def _ensure_embedding_index(cur, embed_dims: int) -> None:
+    cur.execute(
+        """
+        DO $$
+        DECLARE
+          target_dim int := %s;
+          current_dim int;
+        BEGIN
+          SELECT CASE WHEN a.atttypmod > 0 THEN a.atttypmod - 4 ELSE NULL END
+          INTO current_dim
+          FROM pg_attribute a
+          WHERE a.attrelid = 'chunks'::regclass
+            AND a.attname = 'embedding'
+            AND a.attnum > 0
+            AND NOT a.attisdropped;
+
+          IF current_dim IS NULL OR current_dim != target_dim THEN
+            EXECUTE format('ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(%s);', target_dim);
+          END IF;
+        END $$;
+        """,
+        (embed_dims,),
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops)"
     )
 
 
@@ -383,6 +419,7 @@ def startup() -> None:
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(schema_sql)
+                _ensure_embedding_index(cur, settings.embed_dims)
             conn.commit()
 
 
@@ -397,7 +434,8 @@ def health() -> dict[str, str]:
 
     client: OpenAI = app.state.embed_client
     try:
-        embed_texts(client, settings.embed_model_default, ["ping"])
+        vectors = embed_texts(client, settings.embed_model, ["ping"])
+        _ensure_dims(vectors, settings.embed_dims)
     except Exception as exc:  # pragma: no cover - depends on external service
         raise HTTPException(status_code=503, detail=f"Embedding backend error: {exc}") from exc
 
@@ -412,9 +450,8 @@ def health() -> dict[str, str]:
 )
 def create_collection(request: CollectionCreateRequest) -> CollectionResponse:
     settings: Settings = app.state.settings
-    embed_model = request.embed_model or settings.embed_model_default
-    client: OpenAI = app.state.embed_client
-    embed_dims = probe_embed_dims(client, embed_model)
+    embed_model = settings.embed_model
+    embed_dims = settings.embed_dims
 
     pool = get_pool()
     with pool.connection() as conn:
@@ -478,8 +515,9 @@ def ingest_document(
 ) -> DocumentIngestResponse:
     collection_row = _get_collection(collection)
     settings: Settings = app.state.settings
-    embed_model = collection_row["embed_model"]
-    embed_dims = collection_row["embed_dims"]
+    _ensure_collection_embeddings(settings, collection_row)
+    embed_model = settings.embed_model
+    embed_dims = settings.embed_dims
 
     _upsert_document(collection_row["id"], doc_id, request)
 
@@ -517,8 +555,9 @@ def search(collection: str, request: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=400, detail="Hybrid search disabled for collection")
 
     settings: Settings = app.state.settings
-    vectors = _embed_texts(settings, app.state.embed_client, collection_row["embed_model"], [request.query])
-    _ensure_dims(vectors, collection_row["embed_dims"])
+    _ensure_collection_embeddings(settings, collection_row)
+    vectors = _embed_texts(settings, app.state.embed_client, settings.embed_model, [request.query])
+    _ensure_dims(vectors, settings.embed_dims)
 
     if request.mode == "vector":
         results = _vector_search(

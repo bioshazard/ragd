@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 class CollectionCreateRequest(BaseModel):
     name: str
-    embed_model: str | None = None
     hybrid_enabled: bool = False
 
 

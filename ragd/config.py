@@ -7,7 +7,8 @@ class Settings:
     database_url: str
     openai_base_url: str
     openai_api_key: str
-    embed_model_default: str
+    embed_model: str
+    embed_dims: int
     llm_model_default: str
     llm_base_url: str
     llm_api_key: str
@@ -50,6 +51,16 @@ def _get_int(name: str, default: int) -> int:
         raise RuntimeError(f"Invalid int for {name}: {value}") from exc
 
 
+def _get_required_int(name: str) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise RuntimeError(f"Missing required env var: {name}")
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid int for {name}: {value}") from exc
+
+
 def _get_optional_int(name: str) -> int | None:
     value = os.getenv(name)
     if value is None:
@@ -81,7 +92,8 @@ def load_settings() -> Settings:
     database_url = _get_env("DATABASE_URL", required=True)
     openai_base_url = _normalize_base_url(_get_env("OPENAI_BASE_URL", required=True))
     openai_api_key = _get_env("OPENAI_API_KEY", "openai")
-    embed_model_default = _get_env("EMBED_MODEL_DEFAULT", "nomic-embed-text:latest")
+    embed_model = _get_env("EMBED_MODEL", required=True)
+    embed_dims = _get_required_int("EMBED_DIMS")
     llm_model_default = _get_env("LLM_MODEL_DEFAULT", "gpt-4o-mini")
     llm_base_override = _get_optional_env("LLM_BASE_URL")
     llm_base_url = _normalize_base_url(llm_base_override or openai_base_url)
@@ -106,7 +118,8 @@ def load_settings() -> Settings:
         database_url=database_url,
         openai_base_url=openai_base_url,
         openai_api_key=openai_api_key,
-        embed_model_default=embed_model_default,
+        embed_model=embed_model,
+        embed_dims=embed_dims,
         llm_model_default=llm_model_default,
         llm_base_url=llm_base_url,
         llm_api_key=llm_api_key,

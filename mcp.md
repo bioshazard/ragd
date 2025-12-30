@@ -54,7 +54,7 @@ cat <<'JSON' | restish local mcp \
   "params": {
     "name": "collections-search",
     "arguments": {
-      "collection": "podcast",
+      "collection": "docs",
       "query": "how we onboard new hosts",
       "k": 8,
       "mode": "vector"

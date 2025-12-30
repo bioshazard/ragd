@@ -36,8 +36,7 @@ Then update the profile > header:
 ```bash
 restish local collections-create \
   -H "Authorization: Bearer $RAGD_API_KEY" \
-  name:podcast, \
-  embed_model:"nomic-embed-text:latest", \
+  name:docs, \
   hybrid_enabled:true
 ```
 
@@ -54,18 +53,18 @@ This loop builds a full JSON payload and pipes it to `restish` (avoids shell par
 set -euo pipefail
 
 # expand while globbing is still on
-files=( ./data/cache/source/episodes/*/*-whisper.txt )
+files=( ./data/cache/source/docs/*/*.txt )
 
 set -o noglob
 
 for path in "${files[@]}"; do
   [[ -e "$path" ]] || continue  # handles no matches
 
-  doc_id=$(basename "$path" -whisper.txt)
+  doc_id=$(basename "$path" .txt)
   echo "Ingesting $doc_id..."
 
   python3 - "$path" "$doc_id" <<'PY' | time \
-    restish ragd documents-ingest transcripts-pattern-practice "$doc_id" \
+    restish ragd documents-ingest docs "$doc_id" \
       --rsh-ignore-status-code --rsh-raw --rsh-verbose
 import json, sys
 path = sys.argv[1]
@@ -75,7 +74,7 @@ with open(path, "r", encoding="utf-8") as f:
 print(json.dumps({
   "content": text,
   "ingest_mode": "replace",
-  "tags": ["podcast"],
+  "tags": ["documents"],
   "metadata": {"source": path},
   "title": doc_id,
 }))
@@ -88,7 +87,7 @@ done
 ## 4) Retrieve top-k chunks
 
 ```bash
-restish local collections-search podcast \
+restish local collections-search docs \
   -H "Authorization: Bearer $RAGD_API_KEY" \
   query:"how we onboard new hosts", \
   k:8, \
@@ -98,7 +97,7 @@ restish local collections-search podcast \
 Hybrid search (RRF) if the collection has `hybrid_enabled:true`:
 
 ```bash
-restish local collections-search podcast \
+restish local collections-search docs \
   -H "Authorization: Bearer $RAGD_API_KEY" \
   query:"audio normalization workflow", \
   k:8, \
@@ -108,7 +107,7 @@ restish local collections-search podcast \
 ## 5) Basic RAG completion (optional)
 
 ```bash
-restish local collections-ask podcast \
+restish local collections-ask docs \
   -H "Authorization: Bearer $RAGD_API_KEY" \
   query:"What do we recommend for guest audio setups?", \
   k:6, \

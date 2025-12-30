@@ -44,10 +44,10 @@ CREATE TABLE IF NOT EXISTS chunks (
   UNIQUE (collection_id, doc_id, chunk_index)
 );
 
--- Note: HNSW indexes require a fixed vector dimension. Create this manually after
--- you decide on a single embedding dimension and, if desired, alter the column to vector(n).
--- Example:
--- ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(768);
+-- Note: HNSW indexes require a fixed vector dimension. When auto-migrate is enabled,
+-- ragd will set the column to vector(EMBED_DIMS) and create the HNSW index automatically.
+-- If you run schema SQL manually, do the same after picking a fixed dimension:
+-- ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(1024);
 -- CREATE INDEX chunks_embedding_hnsw ON chunks USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS chunks_tags_gin ON chunks USING GIN (tags);
 CREATE INDEX IF NOT EXISTS chunks_fts_gin ON chunks USING GIN (fts);

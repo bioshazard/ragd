@@ -51,7 +51,7 @@ Export the returned `secret_once` as `RAGD_API_KEY`.
 curl -sS -X POST http://localhost:8000/v1/collections \
   -H "Authorization: Bearer $RAGD_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"podcast","embed_model":"nomic-embed-text:latest","hybrid_enabled":true}'
+  -d '{"name":"docs","hybrid_enabled":true}'
 ```
 
 ### 3) Ingest transcripts (100 .txt files)
@@ -68,9 +68,9 @@ export RAGD_URL="http://localhost:8000"
 export RAGD_API_KEY="..."
 
 python scripts/ragd_client.py ingest \
-  --collection podcast \
+  --collection docs \
   --paths "./transcripts/*.txt" \
-  --tags "podcast" \
+  --tags "docs" \
   --ingest-mode replace
 ```
 
@@ -78,7 +78,7 @@ python scripts/ragd_client.py ingest \
 
 ```bash
 python scripts/ragd_client.py search \
-  --collection podcast \
+  --collection docs \
   --query "how we onboard new hosts" \
   --k 8 \
   --mode vector
@@ -90,7 +90,7 @@ Use `--mode hybrid` if the collection has `hybrid_enabled=true`.
 
 ```bash
 python scripts/ragd_client.py ask \
-  --collection podcast \
+  --collection docs \
   --query "What do we recommend for guest audio setups?" \
   --k 6 \
   --mode vector \
